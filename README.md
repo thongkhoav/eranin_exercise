@@ -1,0 +1,2 @@
+- Backend: NodeJS
+- Frontend: AngularJS
