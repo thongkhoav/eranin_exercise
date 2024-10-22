@@ -37,6 +37,10 @@ angular
             ],
           },
         })
+        .when("/verify-login", {
+          templateUrl: "views/verify-login.html",
+          controller: "VerifyLoginController",
+        })
         .when("/register", {
           templateUrl: "views/register.html", // Path to your registration template
           controller: "RegisterController", // New controller for registration

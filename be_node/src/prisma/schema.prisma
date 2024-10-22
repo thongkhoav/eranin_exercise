@@ -19,6 +19,7 @@ model User {
   email    String         @unique
   password String
   sessions LoginSession[]
+  mfaCodes MfaCode[]
 }
 
 model LoginSession {
@@ -27,4 +28,15 @@ model LoginSession {
   refreshToken String
   isLoggedOut  Boolean @default(false)
   user         User    @relation(fields: [userId], references: [id])
+}
+
+model MfaCode {
+  id        String   @id @default(uuid()) // Primary key
+  userId    String // Foreign key to the User model
+  token     String // The MFA token sent to the user's email
+  expiresAt Int // When the token will expire
+  createdAt DateTime @default(now()) // When the token was created
+
+  // Relation to the User model
+  user User @relation(fields: [userId], references: [id])
 }

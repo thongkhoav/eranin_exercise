@@ -17,6 +17,9 @@
     <div ng-if="errorMessage" class="alert alert-danger mt-2" role="alert">
       {{ errorMessage }}
     </div>
+    <div ng-if="mfaEmailSent" class="alert alert-success mt-2" role="alert">
+      Check your email to verify login
+    </div>
     <div class="mt-2 text-center">
       Don't have an account? <a href="#!/register">Register here</a>
     </div>

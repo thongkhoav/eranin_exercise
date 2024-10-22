@@ -2,6 +2,9 @@ import { PrismaClient } from "@prisma/client";
 import express, { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import sendMail from "../utils/sendMail";
+import { generateUniqueToken } from "../utils/token";
+import moment from "moment-timezone";
 const router = express.Router();
 
 const prisma = new PrismaClient();
@@ -71,26 +74,26 @@ router.post("/login", async (req, res): Promise<void> => {
 
     if (user && (await bcrypt.compare(password, user?.password))) {
       const { password: _, ...userWithoutPassword } = user;
-      // console.log(ACCESS_TOKEN_EXPIRES_IN);
-      const accessToken = jwt.sign(userWithoutPassword, ACCESS_TOKEN_SECRET, {
-        expiresIn: ACCESS_TOKEN_EXPIRES_IN,
-      });
-      // console.log(accessToken);
-      const refreshToken = jwt.sign(userWithoutPassword, REFRESH_TOKEN_SECRET, {
-        expiresIn: REFRESH_TOKEN_EXPIRES_IN,
-      });
-      await prisma.loginSession.create({
+      const token = generateUniqueToken();
+      const expiresAt = moment()
+        .tz("Asia/Ho_Chi_Minh")
+        .add(10, "minutes")
+        .unix();
+      const verificationUrl = `${process.env.FE_URL}/verify-login?uid=${userWithoutPassword?.id}&token=${token}&expired_at=${expiresAt}`;
+
+      await sendMail(
+        email,
+        "Login Verification",
+        `Click the link to verify your login: ${verificationUrl}`
+      );
+      await prisma.mfaCode.create({
         data: {
-          user: {
-            connect: {
-              id: userWithoutPassword?.id,
-            },
-          },
-          refreshToken,
+          userId: userWithoutPassword?.id,
+          token,
+          expiresAt: expiresAt,
         },
       });
-
-      res.json({ accessToken, refreshToken });
+      res.json({ message: "Verification email sent" });
       return;
     }
 
@@ -99,6 +102,70 @@ router.post("/login", async (req, res): Promise<void> => {
     console.error(error);
     res.status(500).json({ message: "An error occurred while logging in" });
   }
+});
+
+router.get("/verify-login", async (req, res): Promise<void> => {
+  const { uid, token, expired_at } = req.query;
+  if (!token || !uid || !expired_at || isNaN(Number(expired_at))) {
+    res
+      .status(400)
+      .json({ message: "Token, uid, and expired_at are required" });
+    return;
+  }
+  const currentTime = moment().tz("Asia/Ho_Chi_Minh");
+  console.log(moment.unix(Number(expired_at)).tz("Asia/Ho_Chi_Minh"));
+  if (currentTime.isAfter(moment.unix(Number(expired_at)))) {
+    res.status(400).json({ message: "Token has expired" });
+    return;
+  }
+
+  const mfaCode = await prisma.mfaCode.findFirst({
+    where: {
+      token: String(token),
+      userId: String(uid),
+      expiresAt: {
+        gte: moment().tz("Asia/Ho_Chi_Minh").unix(), // Ensure token is not expired
+      },
+    },
+  });
+
+  if (!mfaCode) {
+    res.status(400).json({ message: "Invalid or expired token" });
+    return;
+  }
+
+  console.log(ACCESS_TOKEN_EXPIRES_IN);
+  const user = await prisma.user.findUnique({
+    where: {
+      id: mfaCode.userId,
+    },
+  });
+
+  if (!user) {
+    res.status(400).json({ message: "User not found" });
+    return;
+  }
+
+  const { password, ...userWithoutPassword } = user;
+  const accessToken = jwt.sign(userWithoutPassword, ACCESS_TOKEN_SECRET, {
+    expiresIn: ACCESS_TOKEN_EXPIRES_IN,
+  });
+  // console.log(accessToken);
+  const refreshToken = jwt.sign(userWithoutPassword, REFRESH_TOKEN_SECRET, {
+    expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+  });
+  await prisma.loginSession.create({
+    data: {
+      user: {
+        connect: {
+          id: userWithoutPassword?.id,
+        },
+      },
+      refreshToken,
+    },
+  });
+
+  res.json({ accessToken, refreshToken });
 });
 
 router.post("/logout", async (req, res): Promise<void> => {
